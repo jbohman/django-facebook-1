@@ -93,8 +93,9 @@ class FacebookMiddleware(object):
             if fb_user:
                 fb_user['method'] = 'cookie'
 
-            request.session[FB_USER_SESSION_KEY] = fb_user
-            request.session[FB_USER_EXPIRES_SESSION_KEY] = time.time() + int(fb_user['expires'])
+                if 'expires' in fb_user:
+                    request.session[FB_USER_SESSION_KEY] = fb_user
+                    request.session[FB_USER_EXPIRES_SESSION_KEY] = time.time() + int(fb_user['expires'])
 
         return fb_user
 
