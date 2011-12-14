@@ -2,7 +2,10 @@ from django.conf import settings
 from django.contrib import auth
 import facebook
 import datetime
+import time
 
+FB_USER_SESSION_KEY = '_fb_user'
+FB_USER_EXPIRES_SESSION_KEY = '_fb_user_expires'
 
 class DjangoFacebook(object):
     """ Simple accessor object for the Facebook user. """
@@ -79,11 +82,20 @@ class FacebookMiddleware(object):
 
     """
     def get_fb_user_cookie(self, request):
-        """ Attempt to find a facebook user using a cookie. """
-        fb_user = facebook.get_user_from_cookie(request.COOKIES,
-            settings.FACEBOOK_APP_ID, settings.FACEBOOK_SECRET_KEY)
-        if fb_user:
-            fb_user['method'] = 'cookie'
+        """
+        Attempt to find a facebook user using a cookie. Cache fb_user in
+        session.
+        """
+        fb_user = request.session.get(FB_USER_SESSION_KEY)
+        expires = request.session.get(FB_USER_EXPIRES_SESSION_KEY)
+        if not fb_user or expires < time.time() + 2:
+            fb_user = facebook.get_user_from_cookie(request.COOKIES, settings.FACEBOOK_APP_ID, settings.FACEBOOK_SECRET_KEY)
+            if fb_user:
+                fb_user['method'] = 'cookie'
+
+            request.session[FB_USER_SESSION_KEY] = fb_user
+            request.session[FB_USER_EXPIRES_SESSION_KEY] = time.time() + int(fb_user['expires'])
+
         return fb_user
 
     def get_fb_user_canvas(self, request):
@@ -141,11 +153,13 @@ class FacebookMiddleware(object):
         fb_user = self.get_fb_user(request)
         request.facebook = DjangoFacebook(fb_user) if fb_user else None
 
-        if fb_user and request.user.is_anonymous():
-            user = auth.authenticate(fb_uid=fb_user['uid'],
-                                     fb_graphtoken=fb_user['access_token'])
-            if user:
-                user.last_login = datetime.datetime.now()
-                user.save()
-                request.user = user
+        if getattr(settings, 'FACEBOOK_AUTOMATIC_LOGIN'):
+            if fb_user and request.user.is_anonymous():
+                user = auth.authenticate(fb_uid=fb_user['uid'],
+                                         fb_graphtoken=fb_user['access_token'])
+                if user:
+                    user.last_login = datetime.datetime.now()
+                    user.save()
+                    request.user = user
+
         return None
